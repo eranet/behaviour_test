@@ -31,6 +31,9 @@ class Dot:
         self.x = x_
         self.y = y_
 
+    def toString(self):
+        return "[" + str(self.x) + " " + str(self.y) + "]"
+
 
 class IIWASimulator:
 
@@ -206,5 +209,5 @@ class IIWASimulator:
         vis = Visualizer()
         vis.animate(blank_chain, q, framerate=0.1, showMeshes=True)
 
-        input()
+        #input()
         return True
