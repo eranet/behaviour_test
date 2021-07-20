@@ -14,6 +14,7 @@ class setup(py_trees.behaviour.Behaviour):
     def update(self):
         print_tree(self.tree)
         self.simulator.setup()
+        self.simulator.startSimulation()
         return py_trees.common.Status.SUCCESS
 
 
@@ -28,6 +29,8 @@ class moveByTrajectory(py_trees.behaviour.Behaviour):
     def update(self):
         print_tree(self.tree)
         self.simulator.addTrajectory(self.trajectory)
+        self.simulator.calculateSolution()
+        self.simulator.executeTrajectory()
         return py_trees.common.Status.SUCCESS
 
 
@@ -40,6 +43,7 @@ class startExecution(py_trees.behaviour.Behaviour):
         self.thread = None
 
     def update(self):
+        print_tree(self.tree)
         self.simulator.startSimulation()
         return py_trees.common.Status.SUCCESS
 
@@ -66,7 +70,6 @@ class BT_model:
         return s
 
     def execute(self, numberOfTimes = py_trees.trees.CONTINUOUS_TICK_TOCK):
-        self.root.add_child(startExecution("Start the simulation", self.simulator, self.root))
         py_trees.display.render_dot_tree(self.root)
         im = Image.open("root.png")
         fig = plt.imshow(im)
@@ -82,9 +85,18 @@ def print_tree(tree):
     print(py_trees.display.unicode_tree(root=tree.root, show_status=True))
 
 
+def tryWithoutTree(sim: IIWASimulator):
+    sim.setup()
+    sim.startSimulation()
+    sim.addTrajectory((Dot(0.1, 0.3), Dot(0.3, 0.3), Dot(0.3, 0.1), Dot(0.1, 0.1), Dot(0.1, 0.3)))
+    sim.calculateSolution()
+    for i in range(10):
+        sim.executeTrajectory()
+
+
 # Initializing the tree and executing it
 if __name__ == '__main__':
     tree = BT_model(IIWASimulator())
     tree.moveByTrajectory([Dot(0.1, 0.3), Dot(0.3, 0.3), Dot(0.3, 0.1), Dot(0.1, 0.1), Dot(0.1, 0.3)])
-    tree.moveByTrajectory([Dot(0.5, 0.5)])
+    tree.moveByTrajectory([Dot(0.5, 0.5), Dot(0.1, 0.3)])
     tree.execute(1)

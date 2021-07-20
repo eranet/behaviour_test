@@ -16,7 +16,7 @@ from SrdPy import plotGeneric
 from copy import deepcopy
 from casadi import *
 from SrdPy import save, get
-from SrdPy.SrdMath import *
+from SrdPy.Math import *
 from SrdPy.TableGenerators import *
 from SrdPy import Chain
 from SrdPy import Profiler
@@ -38,7 +38,8 @@ class Dot:
 class IIWASimulator:
 
     def __init__(self):
-        pass
+        self.tasks = None
+        self.states = []
 
     def my_generateLQRTable(self, A_table, B_table, Q_table, R_table):
         count = A_table.shape[0]
@@ -110,7 +111,7 @@ class IIWASimulator:
         task = constraint6[:2]
         print("task size is: ", task.size)
 
-        description_IK = generateSecondDerivativeJacobians(engine,
+        description_IK, F,dF = generateSecondDerivativeJacobians(engine,
                                                            task=task,
                                                            functionName_Task="g_InverseKinematics_Task",
                                                            functionName_TaskJacobian="g_InverseKinematics_TaskJacobian",
@@ -123,7 +124,6 @@ class IIWASimulator:
         save(self.ikModelHandler, "ikModelHandler")
 
         IC_task = self.ikModelHandler.getTask(self.initialPosition)
-
         self.IC_task = np.reshape(IC_task, [1, 2])
 
         self.tasks = [self.IC_task.T]
@@ -133,7 +133,7 @@ class IIWASimulator:
             self.tasks.append(np.array([[dot.x], [dot.y]]))
         return True
 
-    def startSimulation(self):
+    def calculateSolution(self):
         zeroOrderDerivativeNodes = np.hstack(self.tasks)
 
         firstOrderDerivativeNodes = np.zeros(zeroOrderDerivativeNodes.shape)
@@ -153,7 +153,8 @@ class IIWASimulator:
 
         timeTable = np.arange(handlerIK_taskSplines.timeStart, handlerIK_taskSplines.timeExpiration + 0.01, 0.01)
 
-        IKTable = generateIKTable(self.ikModelHandler, handlerIK_taskSplines, self.initialPosition, timeTable, method="lsqnonlin")
+        IKTable = generateIKTable(self.ikModelHandler, handlerIK_taskSplines, self.initialPosition, timeTable,
+                                  method="lsqnonlin")
         plotIKTable(self.ikModelHandler, timeTable, IKTable)
 
         ikSolutionHandler = IKSolutionHandler(self.ikModelHandler, handlerIK_taskSplines, timeTable, IKTable, "linear")
@@ -164,9 +165,10 @@ class IIWASimulator:
 
         n = self.handlerGeneralizedCoordinatesModel.dofConfigurationSpaceRobot
 
-        A_table, B_table, c_table, x_table, u_table, dx_table = generateLinearModelTable(self.handlerGeneralizedCoordinatesModel,
-                                                                                         self.handlerLinearizedModel,
-                                                                                         ikSolutionHandler, timeTable)
+        A_table, B_table, c_table, x_table, u_table, dx_table = generateLinearModelTable(
+            self.handlerGeneralizedCoordinatesModel,
+            self.handlerLinearizedModel,
+            ikSolutionHandler, timeTable)
 
         print("Started experiment")
 
@@ -174,7 +176,7 @@ class IIWASimulator:
         R = 0.1 * np.eye(self.handlerGeneralizedCoordinatesModel.dofControl)
         count = A_table.shape[0]
 
-        K_table = self.my_generateLQRTable(A_table, B_table, np.tile(Q, [count,1, 1]), np.tile(R, [ count, 1, 1]))
+        K_table = self.my_generateLQRTable(A_table, B_table, np.tile(Q, [count, 1, 1]), np.tile(R, [count, 1, 1]))
         AA_table, cc_table = generateCloseLoopTable(A_table, B_table, c_table, K_table, x_table, u_table)
         ode_fnc_handle = ClosedLoopLinearSystemOdeFunctionHandler(AA_table, cc_table, timeTable)
 
@@ -194,20 +196,25 @@ class IIWASimulator:
         with open('anim_array.npy', 'wb') as f:
             np.save(f, solution_tape[:, :n])
 
-        chainLinks = getLinkArrayFromURDF(os.path.abspath(os.path.dirname(sys.argv[0]) + "/SrdPy/examples/iiwa/iiwa14.urdf"), True)
+
+    def startSimulation(self):
+        chainLinks = getLinkArrayFromURDF(
+            os.path.abspath(os.path.dirname(sys.argv[0]) + "/SrdPy/examples/iiwa/iiwa14.urdf"), True)
 
         chain = Chain(chainLinks)
 
         print(chain)
-        blank_chain = deepcopy(chain)
-        blank_chain.update(self.initialPosition)
+        self.blank_chain = deepcopy(chain)
+        self.blank_chain.update(self.initialPosition)
+        self.vis = Visualizer()
+        self.vis.show(self.blank_chain, showMeshes=True)
+
+    def executeTrajectory(self):
         with open('anim_array.npy', 'rb') as f:
             q = np.load(f)
-
-        blank_chain.update(q[0])
-        plotGeneric(np.arange(q.shape[0]), q, plot=True)
-        vis = Visualizer()
-        vis.animate(blank_chain, q, framerate=0.1, showMeshes=True)
-
-        #input()
-        return True
+        #self.blank_chain.update(q[0])
+        self.vis.animate(self.blank_chain, q, framerate=0.1, showMeshes=True)
+        self.blank_chain.update(q[-1])
+        self.initialPosition = q[-1]
+        END_task = self.ikModelHandler.getTask(q[-1])
+        self.tasks = [np.array(END_task)]
